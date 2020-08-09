@@ -15,8 +15,8 @@ void setup() {
 
 size (1366, 768);
 smooth();
-//myPort = new Serial(this,"COM5", 9600); // change this accordingly
-//myPort.bufferUntil('.'); // reads the data from the serial port up to the character '.'. So actually it reads this: angle,distance.
+myPort = new Serial(this,"COM3", 9600); // change this accordingly
+myPort.bufferUntil('.'); // reads the data from the serial port up to the character '.'. So actually it reads this: angle,distance.
 }
 void draw() {
 
@@ -112,7 +112,11 @@ text("Irfan Shaikh", width-width*0.875, height-height*0.0277);
 text("Angle: " + iAngle +" °", width-width*0.48, height-height*0.0277);
 text("Distance: ", width-width*0.26, height-height*0.0277);
 if(iDistance<40) {
-text(" " + iDistance +" cm", width-width*0.225, height-height*0.0277);
+text(" " + iDistance +" cm", width-width*0.10, height-height*0.0277);
+}
+else
+{
+  text(" ", width-width*0.10, height-height*0.0277);
 }
 textSize(25);
 fill(98,245,60);
