@@ -70,19 +70,19 @@ bool setup_wifi() {
 // This function is called when the sysInfo service was requested.
 void getDeviceInfoHandler() {
   char deviceID[20];
-  sprintf(deviceID, "SmartVavle-%08X", ESP.getChipId());
-  String ptr = "{'device':{'id':'";
+  sprintf(deviceID, "SmartValve-%08X", ESP.getChipId());
+  String ptr = "{\"device\":{\"id\":\"";
   ptr += deviceID;
   if (devicestatus) {
-    ptr += "'},'server':{'status':'started','localip':'192.168.4.4'";
+    ptr += "\"},\"server\":{\"status\":\"started\",\"localip\":\"192.168.4.4\"";
   }
   else {
-    ptr += "'},'server':{'status':'not started','localip':'192.168.4.4'";
+    ptr += "\"},\"server\":{\"status\":\"not started\",\"localip\":\"192.168.4.4\"";
   }
 
-  ptr += ",'gateway':'192.168.4.1'" ;
-  ptr += ",'subnet':'255,255,255,0'}";
-  ptr += ",'ap':{'ssid':'" + (String) p_ssid + "'}}";
+  ptr += ",\"gateway\":\"192.168.4.1\"" ;
+  ptr += ",\"subnet\":\"255,255,255,0\"}";
+  ptr += ",\"ap\":{\"ssid\":\"" + (String) p_ssid + "\"}}";
 
   server.send(200, "application/json", ptr);
 }  // handleSysIn
@@ -134,9 +134,9 @@ void getValvedataHandler() {
      i=i-137;
      out = ((float)i/82.4) * 10;
   }
-  String ptr = "{'value':";
+  String ptr = "{\"value\":\"";
   ptr += (int) i;
-  ptr += "}";
+  ptr += "\"}";
   server.send(200, "application/json", ptr); 
 }
 
