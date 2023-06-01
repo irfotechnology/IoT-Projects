@@ -2,6 +2,11 @@
 #include <ESP8266WebServer.h>
 #include <ESP8266HTTPClient.h>
 #include <ArduinoJson.h>
+#include <Wire.h>
+#include <ds3231.h>
+#include <Adafruit_Sensor.h>
+#include <DHT.h>
+
 // TRACE output simplified, can be deactivated here
 #define TRACE(...) Serial.printf(__VA_ARGS__)
 
@@ -10,17 +15,33 @@
 
 // local time zone definition (Berlin)
 #define TIMEZONE "IST-5:30"
+
+//MUX control pins
+
 bool devicestatus = false;
 // need a WebServer for http access on port 80.
 ESP8266WebServer server(80);
 
 String p_ssid = "";
 String p_key = "";
+struct ts t;
+
+#define DHTPIN 0     // Digital pin connected to the DHT sensor - D4
+#define DHTTYPE    DHT11     // DHT 11
+DHT dht(DHTPIN, DHTTYPE);
 
 void setup() {
   // initialize digital pin LED_BUILTIN as an output.
   pinMode(A0, INPUT);
+  pinMode(D5, OUTPUT);
+  pinMode(D6, OUTPUT);
+  dht.begin();
+ 
   pinMode(LED_BUILTIN, OUTPUT);
+  Wire.begin();
+  //DS3231_init(DS3231_INTCN);
+  DS3231_init(0);
+  
   delay(3000);  // wait for serial monitor to start completely.
   // Use Serial port for some trace information from the example
   Serial.begin(115200);
@@ -31,6 +52,8 @@ void setup() {
   setup_softAP();
   setup_httpserver();
   setup_wifi();
+
+  
 }
 
 void setup_softAP() {
@@ -79,10 +102,11 @@ void getDeviceInfoHandler() {
   else {
     ptr += "\"},\"server\":{\"status\":\"not started\",\"localip\":\"192.168.4.4\"";
   }
-
+  bool connectedToWifi = WiFi.status() == WL_CONNECTED;
+  
   ptr += ",\"gateway\":\"192.168.4.1\"" ;
   ptr += ",\"subnet\":\"255,255,255,0\"}";
-  ptr += ",\"ap\":{\"ssid\":\"" + (String) p_ssid + "\"}}";
+  ptr += ",\"ap\":{\"ssid\":\"" + (String) p_ssid + "\",\"isConnected\":\"" + connectedToWifi + "\"}}";
 
   server.send(200, "application/json", ptr);
 }  // handleSysIn
@@ -125,6 +149,40 @@ bool setWifi(String json) {
   return true;
 }
 
+void setDateTimeHandler() {
+  Serial.println("setsetDateTimeHandler : " + server.arg("plain"));
+  if (server.hasArg("plain") == false) { //Check if body received
+    server.send(400, "text/plain", "Body not received");
+  }
+  if (setDateTime(server.arg("plain"))) {
+    server.send(200, "text/plain", "Date Time has been set in device sucessfully.");
+  }
+  else {
+    server.send(200, "text/plain", "Unable to set Date Time in device due to unknown error.");
+  }
+}
+
+bool setDateTime(String json){
+  DynamicJsonDocument doc(1024);
+  deserializeJson(doc, json);
+  const char* __day = doc["day"];
+  const char* __month = doc["month"];
+  const char* __year = doc["year"];
+
+  const char* __hour = doc["hour"];
+  const char* __minute = doc["min"];
+  const char* __sec = doc["sec"];
+
+   t.mday = ((String) __day).toInt();
+   t.mon =  ((String) __month).toInt();
+   t.year = ((String) __year).toInt();
+   t.hour = ((String)__hour).toInt();
+   t.min =  ((String)__minute).toInt();
+   t.sec =  ((String) __sec).toInt();
+   DS3231_set(t);
+   return true;
+}
+
 
 void getValvedataHandler() {
   //Serial.println("handle_OnConnect");
@@ -147,6 +205,7 @@ void setup_httpserver() {
   server.on("/getValveData", HTTP_GET, getValvedataHandler);
   server.on("/setWifi", HTTP_POST, setWifiHandler);
   server.on("/startWifi", HTTP_POST, startWifiHandler);
+  server.on("/setDateTime", HTTP_POST, setDateTimeHandler);
   
   // enable CORS header in webserver results
   server.enableCORS(true);
@@ -202,10 +261,51 @@ void send_httpRequest() {
   }
 }
 
+void readSensorData(){
+  Serial.print("Humidity (%): ");
+  Serial.println((float)dht.readHumidity());
+
+  Serial.print("Temperature (C): ");
+  Serial.println((float)dht.readTemperature());
+   delay(1000);
+   //C1 - XX01
+  digitalWrite(D5, LOW);
+  digitalWrite(D6, LOW);
+  int val0 = analogRead(A0);
+  Serial.print("C0 Sensor Data : ");
+  Serial.println(val0);
+  //C1 - XX01
+  digitalWrite(D5, HIGH);
+  digitalWrite(D6, LOW);
+  int val1 = analogRead(A0);
+  Serial.print("C1 Sensor Data : ");
+  Serial.println(val1);
+   delay(1000);
+  //C1 - XX10
+  digitalWrite(D5, LOW);
+  digitalWrite(D6, HIGH);
+  int val2 = analogRead(A0);
+  Serial.print("C2 Sensor Data : ");
+  Serial.println(val2);
+}
+
 void loop() {
   // put your main code here, to run repeatedly after 10 sec:
   digitalWrite(LED_BUILTIN, LOW);
-  delay(10000);
+   DS3231_get(&t);
+  Serial.print("Date : ");
+  Serial.print(t.mday);
+  Serial.print("/");
+  Serial.print(t.mon);
+  Serial.print("/");
+  Serial.print(t.year);
+  Serial.print("\t Hour : ");
+  Serial.print(t.hour);
+  Serial.print(":");
+  Serial.print(t.min);
+  Serial.print(".");
+  Serial.println(t.sec);
+  readSensorData();
   digitalWrite(LED_BUILTIN, HIGH);
   server.handleClient();
   send_httpRequest();
