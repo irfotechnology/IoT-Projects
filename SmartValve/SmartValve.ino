@@ -22,8 +22,8 @@ bool devicestatus = false;
 // need a WebServer for http access on port 80.
 ESP8266WebServer server(80);
 
-String p_ssid = "";
-String p_key = "";
+char p_ssid[20];
+char p_key[20];
 struct ts t;
 
 #define DHTPIN 0     // Digital pin connected to the DHT sensor - D4
@@ -74,9 +74,9 @@ void setup_softAP() {
 }
 
 bool setup_wifi() {
-  if (p_ssid.length() > 0 && p_key.length()) {
+  if (strlen(p_ssid) > 0 && strlen(p_key) > 0) {
     Serial.println("Connect to WiFi...\n");
-    WiFi.begin(p_ssid, p_key);
+    WiFi.begin((String)p_ssid, (String) p_key);
     while (WiFi.status() != WL_CONNECTED) {
       delay(500);
       Serial.print(".");
@@ -103,13 +103,44 @@ void getDeviceInfoHandler() {
     ptr += "\"},\"server\":{\"status\":\"not started\",\"localip\":\"192.168.4.4\"";
   }
   bool connectedToWifi = WiFi.status() == WL_CONNECTED;
-  
+ 
   ptr += ",\"gateway\":\"192.168.4.1\"" ;
   ptr += ",\"subnet\":\"255,255,255,0\"}";
-  ptr += ",\"ap\":{\"ssid\":\"" + (String) p_ssid + "\",\"isConnected\":\"" + connectedToWifi + "\"}}";
-
+ if(connectedToWifi){
+     ptr += ",\"ap\":{\"ssid\":\"" + (String) p_ssid + "\",\"isConnected\":true}}";
+  }
+  else{
+     ptr += ",\"ap\":{\"ssid\":\"" + (String) p_ssid + "\",\"isConnected\":false}}";
+  }
   server.send(200, "application/json", ptr);
 }  // handleSysIn
+
+void getSensorDataHandler() {
+  Serial.println("getSensorDataHandler");
+  delay(1000);
+   //C1 - XX01
+  digitalWrite(D5, LOW);
+  digitalWrite(D6, LOW);
+  int val0 = analogRead(A0);
+  Serial.print("C0 tanklevel : ");
+  Serial.println(val0);
+   delay(3000);
+  //C1 - XX10
+  digitalWrite(D5, LOW);
+  digitalWrite(D6, HIGH);
+  int val2 = analogRead(A0);
+  Serial.print("C2 smokelevel : ");
+  Serial.println(val2);
+  
+  String ptr = "{\"tanklevel\":\""; 
+  ptr += calculateGasLevel(val0) ;
+  ptr += "\",\"temprature\":\"";
+  ptr += (float)dht.readTemperature();
+  ptr += "\",\"smokelevel\":\"";
+  ptr += val2;
+  ptr += "\"}";
+  server.send(200, "application/json", ptr); 
+}
 
 void setWifiHandler() {
   Serial.println("setWifiHandler : " + server.arg("plain"));
@@ -130,7 +161,7 @@ void startWifiHandler() {
     server.send(200, "text/plain", "Wifi has been connected sucessfully.");
   }
   else {
-    server.send(200, "text/plain", "Unable to connect to Wifi " + p_ssid);
+    server.send(200, "text/plain", "Unable to connect to Wifi " + (String) p_ssid);
   }
 }
 
@@ -142,8 +173,10 @@ bool setWifi(String json) {
   const char* __passkey = doc["passkey"];
 
   if (strlen(__ssid) > 0 && strlen(__passkey)>0) {
-    p_ssid = (String)  __ssid;
-    p_key = (String) __passkey;
+    //p_ssid = (char[20])__ssid;
+    sprintf(p_ssid, __ssid);
+    //p_key = (char[20])__passkey;
+    sprintf(p_key, __passkey);
   }
   setup_wifi();
   return true;
@@ -184,16 +217,33 @@ bool setDateTime(String json){
 }
 
 
-void getValvedataHandler() {
-  //Serial.println("handle_OnConnect");
-  int i = analogRead(A0);
-  float out =0;
-  if(i>0){
-     i=i-137;
-     out = ((float)i/82.4) * 10;
-  }
-  String ptr = "{\"value\":\"";
-  ptr += (int) i;
+void getDateTimeHandler() {
+  DS3231_get(&t);
+  Serial.print("Date : ");
+  Serial.print(t.mday);
+  Serial.print("/");
+  Serial.print(t.mon);
+  Serial.print("/");
+  Serial.print(t.year);
+  Serial.print("\t Hour : ");
+  Serial.print(t.hour);
+  Serial.print(":");
+  Serial.print(t.min);
+  Serial.print(".");
+  Serial.println(t.sec);
+  
+  String ptr = "{\"year\":\"";
+  ptr += t.year;
+  ptr += "\",\"month\":\"";
+  ptr += t.mon;
+  ptr += "\",\"day\":\"";
+  ptr += t.mday;
+  ptr += "\",\"hour\":\"";
+  ptr += t.hour;
+  ptr += "\",\"min\":\"";
+  ptr += t.min;
+  ptr += "\",\"sec\":\"";
+  ptr += t.sec;
   ptr += "\"}";
   server.send(200, "application/json", ptr); 
 }
@@ -202,7 +252,8 @@ void getValvedataHandler() {
 void setup_httpserver() {
   Serial.println("Starting http server...");
   server.on("/", HTTP_GET, getDeviceInfoHandler);
-  server.on("/getValveData", HTTP_GET, getValvedataHandler);
+  server.on("/getSensorData", HTTP_GET, getSensorDataHandler);
+  server.on("/getDateTime", HTTP_GET, getDateTimeHandler);
   server.on("/setWifi", HTTP_POST, setWifiHandler);
   server.on("/startWifi", HTTP_POST, startWifiHandler);
   server.on("/setDateTime", HTTP_POST, setDateTimeHandler);
@@ -261,6 +312,25 @@ void send_httpRequest() {
   }
 }
 
+int calculateGasLevel(int val){
+  if(val <=113){
+    return 0;
+  }
+  else if(val <=463){
+    return (val-123)/8.5;
+  }
+   else if(val <=673){
+    return (val-183)/7;
+  }
+  else if(val <=973){
+    return (val+27)/10;
+  }
+   else if(val >973){
+    return 100;
+  }
+  return 0;
+}
+
 void readSensorData(){
   Serial.print("Humidity (%): ");
   Serial.println((float)dht.readHumidity());
@@ -292,20 +362,8 @@ void readSensorData(){
 void loop() {
   // put your main code here, to run repeatedly after 10 sec:
   digitalWrite(LED_BUILTIN, LOW);
-   DS3231_get(&t);
-  Serial.print("Date : ");
-  Serial.print(t.mday);
-  Serial.print("/");
-  Serial.print(t.mon);
-  Serial.print("/");
-  Serial.print(t.year);
-  Serial.print("\t Hour : ");
-  Serial.print(t.hour);
-  Serial.print(":");
-  Serial.print(t.min);
-  Serial.print(".");
-  Serial.println(t.sec);
-  readSensorData();
+  
+  //readSensorData();
   digitalWrite(LED_BUILTIN, HIGH);
   server.handleClient();
   send_httpRequest();
